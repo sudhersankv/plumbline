@@ -1,0 +1,170 @@
+{
+  "regulation_id": "APL26-001",
+  "status": "draft",
+  "model": "claude-opus-5-5",
+  "cost_usd": 0.045612,
+  "requirements": [
+    {
+      "id": "APL26-001-D01",
+      "topic": "IHA completion",
+      "obligation": "Complete an IHA for all Members.",
+      "paragraph_id": "APL26-001:P7",
+      "quote": "An IHA must be completed for all Members",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D02",
+      "topic": "IHA re-administration",
+      "obligation": "Periodically re-administer the IHA according to PHM Policy Guide and MCP Contract requirements.",
+      "paragraph_id": "APL26-001:P7",
+      "quote": "periodically re-administered according to requirements in the PHM Policy Guide and MCP Contract requirements",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D03",
+      "topic": "IHA setting",
+      "obligation": "IHA must be performed by a Provider within the primary care medical setting.",
+      "paragraph_id": "APL26-001:P8",
+      "quote": "Must be performed by a Provider within the primary care medical setting.",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D04",
+      "topic": "IHA exception",
+      "obligation": "IHA is not necessary if the PCP determines the Medical Record contains complete information updated within the previous 12 months.",
+      "paragraph_id": "APL26-001:P9",
+      "quote": "Is not necessary if the Member\u2019s Primary Care Provider (PCP) determines that the Member's Medical Record contains complete information that was updated within the previous 12 months.",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D05",
+      "topic": "Cultural and linguistic appropriateness",
+      "obligation": "Provide the IHA in a culturally and linguistically appropriate way.",
+      "paragraph_id": "APL26-001:P10",
+      "quote": "Must be provided in a way that is culturally and linguistically appropriate for the Member.",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D06",
+      "topic": "Documentation",
+      "obligation": "Document the IHA in the Member's Medical Record.",
+      "paragraph_id": "APL26-001:P11",
+      "quote": "Must be documented in the Member\u2019s Medical Record.",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D07",
+      "topic": "IHA content",
+      "obligation": "IHA must include a history of the Member's physical and mental health.",
+      "paragraph_id": "APL26-001:P13",
+      "quote": "A history of the Member's physical and mental health;",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D08",
+      "topic": "IHA content",
+      "obligation": "IHA must include an identification of risks.",
+      "paragraph_id": "APL26-001:P14",
+      "quote": "An identification of risks;",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D09",
+      "topic": "IHA content",
+      "obligation": "IHA must include an assessment of need for preventive screens or services.",
+      "paragraph_id": "APL26-001:P15",
+      "quote": "An assessment of need for preventive screens or services;",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D10",
+      "topic": "IHA content",
+      "obligation": "IHA must include health education.",
+      "paragraph_id": "APL26-001:P16",
+      "quote": "Health education; and",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D11",
+      "topic": "IHA content",
+      "obligation": "IHA must include the diagnosis and plan for treatment of any diseases.",
+      "paragraph_id": "APL26-001:P17",
+      "quote": "The diagnosis and plan for treatment of any diseases.",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D12",
+      "topic": "Dual eligibles",
+      "obligation": "For dually eligible Members, adhere to IHA requirements in the PHM Policy Guide and MCP Contract.",
+      "paragraph_id": "APL26-001:P18",
+      "quote": "For Members who are dually eligible for Medi-Cal and Medicare, MCPs must adhere to the IHA requirements in the PHM Policy Guide and MCP Contract.",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D13",
+      "topic": "P&P review",
+      "obligation": "Review contractually required P&Ps to determine if amendments are needed to comply with this APL.",
+      "paragraph_id": "APL26-001:P19",
+      "quote": "MCPs must review their contractually required policies and procedures (P&Ps) to determine if amendments are needed to comply with this APL.",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D14",
+      "topic": "P&P submission",
+      "obligation": "If changes are needed, submit updated P&Ps to the MCOD-MCP Submission Portal within 90 calendar days of APL release.",
+      "paragraph_id": "APL26-001:P19",
+      "quote": "the MCP must submit its updated P&Ps to the Managed Care Operations Division (MCOD)-MCP Submission Portal within 90 calendar days of the release of this APL",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D15",
+      "topic": "P&P attestation",
+      "obligation": "If no changes are needed, attach an attestation to the Portal within 90 calendar days stating P&Ps were reviewed and no changes are necessary.",
+      "paragraph_id": "APL26-001:P19",
+      "quote": "the MCP must attach an attestation to the Portal within 90 calendar days of the release of this APL, stating that the MCP\u2019s P&Ps have been reviewed and no changes are necessary",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D16",
+      "topic": "Attestation subject line",
+      "obligation": "Include the APL title and release date in the attestation subject line.",
+      "paragraph_id": "APL26-001:P19",
+      "quote": "The attestation must include the title of this APL as well as the applicable APL release date in the subject line.",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D17",
+      "topic": "Subcontractor compliance",
+      "obligation": "Ensure Subcontractors and Network Providers comply with applicable laws, Contract requirements, and DHCS guidance including APLs.",
+      "paragraph_id": "APL26-001:P20",
+      "quote": "MCPs are responsible for ensuring that their Subcontractors and Network Providers comply with all applicable state and federal laws and regulations, Contract requirements, and other DHCS guidance, including APLs and Policy Letters.",
+      "citation_status": "verified",
+      "citation_notes": []
+    },
+    {
+      "id": "APL26-001-D18",
+      "topic": "Communication to subcontractors",
+      "obligation": "Communicate these requirements to all Subcontractors and Network Providers.",
+      "paragraph_id": "APL26-001:P20",
+      "quote": "These requirements must be communicated by each MCP to all Subcontractors and Network Providers.",
+      "citation_status": "verified",
+      "citation_notes": []
+    }
+  ]
+}
