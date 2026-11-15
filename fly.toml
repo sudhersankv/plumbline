@@ -1,0 +1,18 @@
+app = "plumbline-console"
+primary_region = "iad"   # near the Neon project in aws-us-east-2
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1   # runs execute in background threads; keep one machine up
+
+  [[http_service.checks]]
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

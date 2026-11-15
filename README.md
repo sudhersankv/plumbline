@@ -116,6 +116,16 @@ Open http://localhost:8000 and run a workflow from **Regulatory changes**. To re
 uv run python scripts/run_benchmarks.py
 ```
 
+### Deploy (Fly.io)
+
+The [Dockerfile](Dockerfile) builds the console and serves it from the API on one machine ([fly.toml](fly.toml)). Set `CONSOLE_PASSWORD` so a public URL can't spend your model credits; the browser asks for it (any username).
+
+```bash
+fly apps create <your-app-name>
+grep -vE '^(#|$|API_PORT|WEB_PORT)' .env | fly secrets import --stage
+fly deploy --remote-only
+```
+
 ## Two-minute walkthrough
 
 1. **Regulatory changes:** APL 26-001 reached both plans. Click **Run again** on Sunvale's policy gap review; it finishes in about 30 seconds.

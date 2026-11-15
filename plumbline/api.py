@@ -7,8 +7,12 @@ import threading
 import traceback
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+import base64
+import os
+import secrets
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -16,6 +20,30 @@ from . import benchmark, config, db, gateway, runs, tasks, workflows
 from .documents import load
 
 app = FastAPI(title="Plumbline platform API")
+
+# Optional basic auth for a hosted demo: runs spend real model credits, so a public URL stays behind a password.
+_PASSWORD = os.environ.get("CONSOLE_PASSWORD", "").strip()
+
+
+@app.middleware("http")
+async def basic_auth(request: Request, call_next):
+    if _PASSWORD and request.url.path != "/healthz":
+        ok = False
+        h = request.headers.get("authorization", "")
+        if h.startswith("Basic "):
+            try:
+                _, _, pw = base64.b64decode(h[6:]).decode().partition(":")
+                ok = secrets.compare_digest(pw, _PASSWORD)
+            except Exception:
+                ok = False
+        if not ok:
+            return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Plumbline demo"'})
+    return await call_next(request)
+
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
 PLANS = {"sunvale": "Sunvale Health Plan", "bayline": "Bayline Community Health"}
 
 
