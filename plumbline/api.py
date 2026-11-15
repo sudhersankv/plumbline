@@ -193,7 +193,12 @@ def start_benchmark(body: BenchIn):
     if body.task not in tasks.SPECS:
         raise HTTPException(400)
     bid = str(db.one("insert into benchmarks(task, kind) values (%s,%s) returning id", body.task, body.kind)["id"])
-    _bg(benchmark.stress if body.kind == "snap_stress" else benchmark.run, body.task, *([bid] if body.kind == "snap_stress" else [None, bid]))
+    if body.kind == "snap_stress":
+        _bg(benchmark.stress, body.task, bid)
+    elif body.kind == "models":
+        _bg(benchmark.compare, body.task, bid)
+    else:
+        _bg(benchmark.run, body.task, None, bid)
     return {"id": bid}
 
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ms, pct, post, usd, when } from "../api";
 import { Badge, Elapsed, Empty, PageHead, usePoll } from "../ui";
+import { Compare } from "./Compare";
 
 const TASKS: Record<string, { title: string; pos: string; danger: string }> = {
   judge_evidence: { title: "Audit evidence", pos: "satisfied", danger: "False “satisfied”" },
@@ -28,7 +29,7 @@ function Sees({ kind }: { kind: string }) {
 export default function Benchmarks() {
   const { data, reload } = usePoll<any[]>("/api/benchmarks", 5000);
   const { data: ds } = usePoll<any>("/api/datasets");
-  const [tab, setTab] = useState("summary");
+  const [tab, setTab] = useState("models");
   const get = (task: string, kind: string) => data?.find((b) => b.task === task && b.kind === kind);
   const cur = tab === "stress" ? get("judge_evidence", "snap_stress") : TASKS[tab] ? get(tab, "setups") : null;
 
@@ -37,7 +38,7 @@ export default function Benchmarks() {
     await post("/api/benchmarks", tab === "stress" ? { task: "judge_evidence", kind: "snap_stress" } : { task: tab });
     reload();
   }
-  const tabs: [string, string][] = [["summary", "Summary & method"], ["judge_gap", "Policy gaps"], ["judge_evidence", "Audit evidence"], ["stress", "Decision-model stress"], ["decision", "Routing decision"]];
+  const tabs: [string, string][] = [["models", "Model comparison"], ["summary", "Summary & method"], ["judge_gap", "Policy gaps"], ["judge_evidence", "Audit evidence"], ["stress", "Decision-model stress"], ["decision", "Routing decision"]];
 
   return (
     <div className="page" style={{ maxWidth: 1400 }}>
@@ -47,6 +48,7 @@ export default function Benchmarks() {
       </PageHead>
       <div className="tabs">{tabs.map(([k, l]) => <button key={k} className={`tab${tab === k ? " on" : ""}`} onClick={() => setTab(k)}>{l}</button>)}</div>
       {!data && <Empty>Loading…</Empty>}
+      {data && tab === "models" && <Compare data={data} reload={reload} />}
       {data && tab === "summary" && <Summary gap={get("judge_gap", "setups")} ev={get("judge_evidence", "setups")} stress={get("judge_evidence", "snap_stress")} ds={ds} />}
       {data && tab === "decision" && <Decision gap={get("judge_gap", "setups")} ev={get("judge_evidence", "setups")} />}
       {data && (TASKS[tab] || tab === "stress") && !cur && <Empty>No eval yet for this task. Use “Run again” to start one.</Empty>}

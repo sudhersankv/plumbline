@@ -107,7 +107,7 @@ def _per_item(spec: TaskSpec, item: Item, plan: str, route: dict, lookup: dict[s
 
     system = SYSTEM.format(instructions=spec.instructions, labels=_labels_text(spec))
     user = f"{item.question}\n\nPASSAGES:\n{_passages(hits)}"
-    r = gateway.complete(spec.name, system, user, _schema(spec), route=route, max_tokens=4000)
+    r = gateway.complete(spec.name, system, user, _schema(spec), route=route, max_tokens=16000)
     d = r.data
     v = Verdict(item.id, d.get("label", "no_answer"), name, paragraph_ids=list(d.get("paragraph_ids") or []),
                 quote=d.get("quote") or None, reason=d.get("reason"), latency_ms=r.latency_ms)
@@ -158,7 +158,7 @@ def _long_context(spec: TaskSpec, items: list[Item], route: dict, corpus_text: s
     item_schema["properties"] = {"item_id": {"type": "string"}, **item_schema["properties"]}
     item_schema["required"] = ["item_id", *item_schema["required"]]
     schema = {"type": "object", "properties": {"verdicts": {"type": "array", "items": item_schema}}, "required": ["verdicts"]}
-    r = gateway.complete(spec.name, system, user, schema, route=route, max_tokens=min(48000, 800 * len(items) + 8000))
+    r = gateway.complete(spec.name, system, user, schema, route=route, max_tokens=64000)
     got = {d.get("item_id"): d for d in (r.data or {}).get("verdicts", [])}
     out = []
     for it in items:

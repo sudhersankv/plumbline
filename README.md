@@ -19,7 +19,35 @@ A person reviews every finding in the console. The regulation text on screen alw
 
 Each setup was run on the labelled datasets: 32 policy-gap items across both plans, and 42 audit items. Cost and latency are read from the gateway log. The **dangerous error** is a false "met" or false "satisfied": a gap the auditor finds and we didn't. It is reported separately.
 
-### Policy gaps (32 items)
+### Model comparison: same task, same documents, only the model changes
+
+Fresh calls with the cache off. Every LLM ran at `high` effort, the setting both Anthropic and SubQ document for analysis work, with no fallback model and provider prompt caching off. Snap is not a drop-in replacement for an LLM. It answers every item as a typed question in a single forward pass and writes no text, so it is compared in the condition it's designed for: the whole document set with all items at once. See [docs/models-and-settings.md](docs/models-and-settings.md) for every setting and the docs behind it.
+
+**Policy gaps (32 items), whole document set**
+
+| Model | Accuracy | vs Opus | False "met" | Cost | Saved | Time | Faster |
+|---|---|---|---|---|---|---|---|
+| Opus 5.5 | 94% | baseline | 0 | $0.190 | — | 65s | — |
+| Sonnet 5.5 | 88% | −6 pts | 0 | $0.092 | 52% | 43s | 1.5× |
+| Haiku 5.5 | 88% | −6 pts | 0 | $0.007 | 96% | 50s | 1.3× |
+| SubQ Savant | 94% | ±0 | 0 | $0.006 | 97% | 22s | 3.0× |
+| SubQ Snap (one pass) | 81% | −12 pts | 2 | $0.002 | 99% | 2.8s | 23× |
+
+**Audit evidence (42 items), whole document set**
+
+| Model | Accuracy | vs Opus | False "satisfied" | Cost | Saved | Time | Faster |
+|---|---|---|---|---|---|---|---|
+| Opus 5.5 | 93% | baseline | 0 | $0.304 | — | 124s | — |
+| Sonnet 5.5 | 88% | −5 pts | 1 | $0.167 | 45% | 101s | 1.2× |
+| Haiku 5.5 | 86% | −7 pts | 1 | $0.011 | 96% | 94s | 1.3× |
+| SubQ Savant | 88% | −5 pts | 1 | $0.011 | 96% | 35s | 3.5× |
+| SubQ Snap (one pass) | 83% | −10 pts | 5 | $0.005 | 98% | 4.3s | 29× |
+
+With only a few retrieved passages per item, every model does worse. On the gap task, Opus drops to 75% with 4 false "met"; on evidence, to 57%. That's because retrieval rarely shows both sides of a cross-document problem. The full per-condition tables are on the console's **Evals → Model comparison** tab.
+
+**What this means for routing:** Snap is 23–29× faster and about 99% cheaper, but it isn't safe as the final word. It made 2 and 5 dangerous errors. It fits as a one-pass triage, evidence locator and severity scorer, with LLMs handling escalations and explanations. For policy gaps, Savant matched Opus at 3% of the cost, so `judge_gap` routes to Savant. For audit evidence, only Opus had zero false "satisfied", so `judge_evidence` stays on Opus.
+
+### Policy gaps (32 items), earlier run with more setups (effort `low`)
 
 | Setup | Accuracy (95% CI) | False "met" | Cost (all items) |
 |---|---|---|---|
@@ -32,7 +60,7 @@ Each setup was run on the labelled datasets: 32 policy-gap items across both pla
 
 Retrieving the top 5 paragraphs misses **cross-policy conflicts**. For example, the IHA policy says only primary care may perform the IHA, while the network policy lets urgent care and a telehealth vendor do it. Neither paragraph is a gap on its own; the problem shows only when both are read together. Long-context setups catch these. Savant matches Opus long-context accuracy at about 1/24 of its cost, so `judge_gap` now routes to Savant.
 
-### Audit evidence (42 items)
+### Audit evidence (42 items), earlier run (effort `low`)
 
 | Setup | Accuracy (95% CI) | False "satisfied" | Cost |
 |---|---|---|---|

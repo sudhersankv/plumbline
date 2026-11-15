@@ -137,9 +137,17 @@ def _cache_put(key: str, value: dict) -> None:
 
 
 # ─── HTTP ──────────────────────────────────────────────────────────────────────
-_client = httpx.Client(timeout=httpx.Timeout(600.0, connect=20.0))
-_limits = {"anthropic": threading.Semaphore(8), "subq": threading.Semaphore(4), "embed": threading.Semaphore(4)}
+_client = httpx.Client(timeout=httpx.Timeout(900.0, connect=20.0))
+# Same concurrency for every provider so wall-clock comparisons are fair.
+_limits = {"anthropic": threading.Semaphore(8), "subq": threading.Semaphore(8), "embed": threading.Semaphore(4)}
 RETRYABLE = {408, 409, 425, 429, 500, 502, 503, 504, 529}
+
+
+def _error(status: int, url: str, text: str, retry_after: str | None = None) -> GatewayError:
+    err = GatewayError(f"{status} from {url}: {text[:400]}")
+    err.status = status  # type: ignore[attr-defined]
+    err.retry_after = float(retry_after) if retry_after and retry_after.replace(".", "").isdigit() else None  # type: ignore[attr-defined]
+    return err
 
 
 def _post(url: str, headers: dict, body: dict, limit: str) -> tuple[dict, int]:
@@ -148,13 +156,54 @@ def _post(url: str, headers: dict, body: dict, limit: str) -> tuple[dict, int]:
         r = _client.post(url, headers=headers, json=body)
         ms = int((time.perf_counter() - t0) * 1000)
     if r.status_code >= 400:
-        err = GatewayError(f"{r.status_code} from {url}: {r.text[:400]}")
-        err.status = r.status_code  # type: ignore[attr-defined]
-        raise err
+        raise _error(r.status_code, url, r.text, r.headers.get("retry-after"))
     return r.json(), ms
 
 
-def _with_retries(fn: Callable[[], CallResult], tries: int = 3) -> tuple[CallResult, int]:
+def _post_stream_anthropic(url: str, headers: dict, body: dict) -> tuple[dict, int]:
+    """Anthropic Messages over SSE, reassembled into a normal response. Used for long outputs, as the
+    Claude docs and Neon's timeout guidance recommend."""
+    with _limits["anthropic"]:
+        t0 = time.perf_counter()
+        msg: dict = {"content": [], "usage": {}}
+        blocks: dict[int, dict] = {}
+        with _client.stream("POST", url, headers=headers, json={**body, "stream": True}) as r:
+            if r.status_code >= 400:
+                raise _error(r.status_code, url, r.read().decode(errors="replace"), r.headers.get("retry-after"))
+            event = None
+            for line in r.iter_lines():
+                if line.startswith("event:"):
+                    event = line[6:].strip()
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                d = json.loads(line[5:])
+                t = d.get("type", event)
+                if t == "message_start":
+                    m = d["message"]
+                    msg.update({k: v for k, v in m.items() if k != "content"})
+                    msg["usage"] = dict(m.get("usage") or {})
+                elif t == "content_block_start":
+                    blocks[d["index"]] = dict(d["content_block"])
+                    if blocks[d["index"]].get("type") == "text":
+                        blocks[d["index"]]["text"] = blocks[d["index"]].get("text", "")
+                elif t == "content_block_delta" and d["delta"].get("type") == "text_delta":
+                    blocks[d["index"]]["text"] += d["delta"]["text"]
+                elif t == "message_delta":
+                    msg.update({k: v for k, v in d.get("delta", {}).items() if v is not None})
+                    msg["usage"].update({k: v for k, v in (d.get("usage") or {}).items() if v is not None})
+                elif t == "error":
+                    raise _error(529, url, json.dumps(d.get("error")))
+        ms = int((time.perf_counter() - t0) * 1000)
+    msg["content"] = [blocks[i] for i in sorted(blocks)]
+    return msg, ms
+
+
+class OutOfTokens(GatewayError):
+    status = 413  # not retryable with the same budget
+
+
+def _with_retries(fn: Callable[[], CallResult], tries: int = 5) -> tuple[CallResult, int]:
     last: Exception | None = None
     for attempt in range(1, tries + 1):
         try:
@@ -164,35 +213,40 @@ def _with_retries(fn: Callable[[], CallResult], tries: int = 3) -> tuple[CallRes
             status = getattr(e, "status", None)
             if status is not None and status not in RETRYABLE:
                 break
-            time.sleep(min(2 ** attempt, 20))
+            wait = getattr(e, "retry_after", None) or min(2 ** attempt, 30)
+            time.sleep(min(wait, 60))
     raise GatewayError(str(last))
 
 
 # ─── complete() ────────────────────────────────────────────────────────────────
-def _anthropic(model: str, system: str, user: str, schema: dict | None, max_tokens: int, effort: str) -> CallResult:
+def _anthropic(model: str, system: str, user: str, schema: dict | None, max_tokens: int, effort: str,
+               prompt_cache: bool = True) -> CallResult:
     sys_block: dict = {"type": "text", "text": system}
-    if len(system) > 4000:  # long, reused document context: let the provider cache it
+    if prompt_cache and len(system) > 4000:  # long, reused document context: let the provider cache it
         sys_block["cache_control"] = {"type": "ephemeral"}
-    # Current Claude models think adaptively; effort is the depth/cost control. Structured output via
-    # output_config.format (forced tool_choice is rejected by Opus 5.5).
+    # Claude 5.5 models think adaptively (thinking can't be disabled on Opus 5.5); effort is the depth/cost
+    # control and is always set explicitly (Opus/Haiku 5.5 default to medium, Sonnet 5.5 to high).
+    # Structured output via output_config.format: forced tool_choice is rejected by Opus/Sonnet 5.5.
     output_config: dict = {"effort": effort}
     if schema:
         output_config["format"] = {"type": "json_schema", "schema": _strict(schema)}
     body: dict = {"model": model, "max_tokens": max_tokens, "system": [sys_block], "output_config": output_config,
                   "messages": [{"role": "user", "content": user}]}
-    resp, ms = _post(f"{config.NEON_BASE}/anthropic/v1/messages",
-                     {"Authorization": f"Bearer {config.NEON_TOKEN}", "anthropic-version": "2023-06-01"}, body, "anthropic")
+    url = f"{config.NEON_BASE}/anthropic/v1/messages"
+    headers = {"Authorization": f"Bearer {config.NEON_TOKEN}", "anthropic-version": "2023-06-01"}
+    resp, ms = (_post_stream_anthropic(url, headers, body) if max_tokens > 16000
+                else _post(url, headers, body, "anthropic"))
     if resp.get("stop_reason") == "refusal":
         raise ValueError(f"model refused: {resp.get('stop_details')}")
     if resp.get("stop_reason") == "max_tokens":
-        raise ValueError("hit max_tokens before finishing")
+        raise OutOfTokens(f"{model} hit max_tokens={max_tokens} before finishing")
     text = "".join(b.get("text", "") for b in resp["content"] if b.get("type") == "text")
     data = json.loads(text) if schema else text
     u = resp.get("usage", {})
     cr, cw = u.get("cache_read_input_tokens", 0) or 0, u.get("cache_creation_input_tokens", 0) or 0
     it, ot = u.get("input_tokens", 0), u.get("output_tokens", 0)
     return CallResult(data, "anthropic", model, it + cr + cw, ot, config.cost_usd(model, it, ot, cr, cw), ms,
-                      extra={"cache_read_tokens": cr, "cache_write_tokens": cw})
+                      extra={"cache_read_tokens": cr, "cache_write_tokens": cw, "effort": effort})
 
 
 def _strict(schema: dict) -> dict:
@@ -214,9 +268,12 @@ def _subq_chat(model: str, system: str, user: str, schema: dict | None, max_toke
         body["response_format"] = {"type": "json_schema",
                                    "json_schema": {"name": "result", "strict": True, "schema": _strict(schema)}}
     resp, ms = _post(f"{config.SUBQ_BASE}/chat/completions", {"Authorization": f"Bearer {config.SUBQ_KEY}"}, body, "subq")
-    content = resp["choices"][0]["message"].get("content")
+    choice = resp["choices"][0]
+    content = choice["message"].get("content")
     if not content:
-        raise ValueError("empty content (reasoning used the whole token budget)")
+        if choice.get("finish_reason") == "length":  # docs: content can be null when max_tokens is used up
+            raise OutOfTokens(f"{model} used max_tokens={max_tokens} (reasoning included) before answering")
+        raise ValueError("empty content")
     data = json.loads(content) if schema else content
     u = resp.get("usage", {})
     it, ot = u.get("prompt_tokens", 0), u.get("completion_tokens", 0)
@@ -228,7 +285,9 @@ def complete(task: str, system: str, user: str, schema: dict | None = None, *, r
              max_tokens: int = 2000) -> CallResult:
     route = route or get_route(task)
     provider, model = route["provider"], route["model"]
-    effort = route.get("reasoning_effort", "low")
+    effort = route.get("effort") or route.get("reasoning_effort") or "low"
+    prompt_cache = route.get("prompt_cache", True)
+    max_tokens = int(route.get("max_tokens", max_tokens))
     key = _cache_key("complete", provider, model, system, user, schema, max_tokens, effort)
     hit = _cache_get(key)
     if hit:
@@ -239,7 +298,7 @@ def complete(task: str, system: str, user: str, schema: dict | None = None, *, r
 
     def call(m: str) -> CallResult:
         if provider == "anthropic":
-            return _anthropic(m, system, user, schema, max_tokens, effort)
+            return _anthropic(m, system, user, schema, max_tokens, effort, prompt_cache)
         if provider == "subq-chat":
             return _subq_chat(m, system, user, schema, max(max_tokens, 8000), effort)
         raise GatewayError(f"complete() cannot use provider {provider}")

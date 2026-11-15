@@ -28,8 +28,29 @@ SETUPS: dict[str, dict] = {
                     "model": config.SAVANT_MODEL, "reasoning_effort": "low"},
     "opus_long": {"name": "Opus 5.5 · long context", "shape": "long_context", "provider": "anthropic",
                   "model": config.STRONG_MODEL, "fallback": config.FALLBACK_MODEL},
+    "sonnet_retrieve": {"name": "Sonnet 5.5 · retrieve", "shape": "per_item", "provider": "anthropic",
+                        "model": config.FALLBACK_MODEL},
+    "sonnet_long": {"name": "Sonnet 5.5 · long context", "shape": "long_context", "provider": "anthropic",
+                    "model": config.FALLBACK_MODEL},
+    "haiku_long": {"name": "Haiku 5.5 · long context", "shape": "long_context", "provider": "anthropic",
+                   "model": config.CHEAP_MODEL},
 }
 DEFAULT_K = {"judge_gap": 5, "judge_evidence": 3}
+
+# Head-to-head: same task, same labels, same documents and instructions; only the model changes.
+# "whole": every model gets the plan's entire document set and every item at once. Snap answers in one
+#          forward pass (typed questions, no text generation); LLMs generate structured answers.
+# "retrieve": every model gets the same top-k retrieved passages, one item per call.
+COMPARE = {
+    "whole": ["opus_long", "sonnet_long", "haiku_long", "savant_long", "snap_batched"],
+    "retrieve": ["opus_retrieve", "sonnet_retrieve", "haiku_retrieve", "snap_per_item"],
+}
+EFFORT = "high"  # Claude docs: high minimum for intelligence-sensitive work; SubQ: high = "most analysis"
+HOW_IT_ANSWERS = {
+    "anthropic": "Generates a structured answer token by token (label, citations, quote, reason)",
+    "subq-chat": "Generates a structured answer token by token (label, citations, quote, reason)",
+    "subq-snap": "One forward pass: picks a label and a paragraph from fixed options, with probabilities. Writes no text",
+}
 
 
 # ─── dataset ──────────────────────────────────────────────────────────────────
@@ -311,4 +332,63 @@ def stress(task: str = "judge_evidence", bench_id: str | None = None) -> str:
         raise
     finally:
         gateway.current_benchmark.reset(tok)
+    return bench_id
+
+
+# ─── Head-to-head model comparison ────────────────────────────────────────────
+def compare(task: str, bench_id: str | None = None, fresh: bool = True) -> str:
+    """Same task through each model under the same input condition, measured fresh (no cache), against Opus."""
+    spec = tasks.SPECS[task]
+    rows = dataset(task)
+    if bench_id is None:
+        bench_id = str(db.one("insert into benchmarks(task, kind) values (%s,'models') returning id", task)["id"])
+    tok_b = gateway.current_benchmark.set(bench_id)
+    tok_c = gateway.use_cache.set(not fresh)
+    res: dict = {"task": task, "n": len(rows), "fresh": fresh, "conditions": {},
+                 "settings": {"llm_effort": EFFORT, "prompt_cache": False, "concurrency": 8, "fallback": None,
+                              "retrieve_k": DEFAULT_K[task], "snap_model": config.SNAP_MODEL}}
+    try:
+        for cond, keys in COMPARE.items():
+            out: dict = {}
+            for key in keys:
+                # Measure this model only (no fallback), at the effort both providers document for analysis
+                # ("high"), with provider prompt caching off so one-shot cost isn't inflated or discounted.
+                route = {k: v for k, v in SETUPS[key].items() if k != "fallback"}
+                if route["provider"] != "subq-snap":
+                    route.update(effort=EFFORT, reasoning_effort=EFFORT, prompt_cache=False)
+                t0 = time.perf_counter()
+                preds = _run_setup(spec, rows, key, route)
+                wall = time.perf_counter() - t0
+                m = score(spec, rows, preds)
+                m.update(_cost_latency(bench_id, key, len(rows)))
+                m.update(_lat(list(preds.values())))
+                t = db.one("""select coalesce(sum(latency_ms),0) ms, count(*) filter (where fallback_from is not null) fb
+                              from model_calls where benchmark_id=%s and setup=%s and kind<>'embed'""", bench_id, key)
+                m.update({"name": route["name"].split(" · ")[0], "setup": route["name"], "model": route["model"],
+                          "provider": gateway.provider_label(route["provider"]), "answers": HOW_IT_ANSWERS[route["provider"]],
+                          "wall_s": wall, "model_time_s": t["ms"] / 1000, "fallbacks": t["fb"],
+                          "preds": {_key(r): preds[_key(r)].label for r in rows}})
+                out[key] = m
+                res["conditions"][cond] = out
+                db.q("update benchmarks set results=%s where id=%s", db.J(res), bench_id)
+            base = out[keys[0]]  # Opus is first in each condition
+            for k, m in out.items():
+                m["vs_opus"] = {
+                    "accuracy_delta": m["accuracy"] - base["accuracy"],
+                    "false_positive_delta": m["false_positive"] - base["false_positive"],
+                    "cost_saved_pct": 1 - m["cost_usd"] / base["cost_usd"] if base["cost_usd"] else None,
+                    "cost_ratio": base["cost_usd"] / m["cost_usd"] if m["cost_usd"] else None,
+                    "time_saved_pct": 1 - m["wall_s"] / base["wall_s"] if base["wall_s"] else None,
+                    "speedup": base["wall_s"] / m["wall_s"] if m["wall_s"] else None,
+                    "agreement": sum(m["preds"][x] == base["preds"][x] for x in base["preds"]) / len(base["preds"]),
+                }
+        res["truth"] = {_key(r): r["truth"] for r in rows}
+        db.q("update benchmarks set status='done', finished_at=now(), results=%s where id=%s", db.J(res), bench_id)
+    except Exception as e:
+        db.q("update benchmarks set status='failed', finished_at=now(), error=%s, results=%s where id=%s",
+             repr(e)[:2000], db.J(res), bench_id)
+        raise
+    finally:
+        gateway.use_cache.reset(tok_c)
+        gateway.current_benchmark.reset(tok_b)
     return bench_id
