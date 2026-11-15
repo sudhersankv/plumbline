@@ -128,11 +128,12 @@ fly deploy --remote-only
 
 ## Two-minute walkthrough
 
+0. **Overview:** the platform's architecture map. Select any component (the gateway, `judge`, a workflow, a model) to see what it does, why it's built that way, live numbers, and its source code.
 1. **Regulatory changes:** APL 26-001 reached both plans. Click **Run again** on Sunvale's policy gap review; it finishes in about 30 seconds.
 2. **Gap review · Sunvale → R03:** a conflict. The regulation text sits on the left; on the right are the primary-care-only paragraph and the paragraph allowing urgent care and telehealth, with the quote highlighted. Accept it: the decision is saved as a label.
 3. **Runs → that run:** each gateway call with its model, tokens, latency, cost, and whether it was cached.
-4. **Benchmarks → Policy gaps:** retrieval-based Opus missed the conflicts (4 false "met"); Savant reading everything got 94% for 1/38 of the cost. Then open **SubQ Snap stress tests**.
-5. **Routing → judge_gap → Change → "Opus 5.5 · retrieve" → Save.** Rerun the workflow and the conflicts disappear again. That's a one-line config change, and the benchmark shows why it's the wrong one.
+4. **Evals → Summary, then Policy gaps:** retrieval-based Opus missed the conflicts (4 false "met"); Savant reading everything got 94% for 1/38 of the cost. Then open **SubQ Snap stress tests**.
+5. **Gateway & routing → judge_gap → Change → "Opus 5.5 · retrieve" → Save.** Rerun the workflow and the conflicts disappear again. That's a one-line config change, and the benchmark shows why it's the wrong one.
 
 ## Repository layout
 

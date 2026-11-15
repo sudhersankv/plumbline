@@ -41,7 +41,7 @@ def dataset(task: str) -> list[dict]:
         items = {it.id: it for it in tasks.gap_items(reqs)}
         return [{"plan": l["plan"], "item": items[l["requirement_id"]], "truth": l["label"], "tricky": l["tricky"],
                  "why_tricky": l.get("why_tricky", ""), "paragraph_ids": l["paragraph_ids"],
-                 "severity": l.get("severity")} for l in labels]
+                 "severity": l.get("severity"), "planted": l.get("planted", "")} for l in labels]
     labels = {l["audit_item_id"]: l for l in
               json.loads((config.DATA / "labels/evidence_labels.json").read_text(encoding="utf-8"))["labels"]}
     out = []

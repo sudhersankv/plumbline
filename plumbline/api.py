@@ -215,10 +215,104 @@ def datasets():
     for t in tasks.SPECS:
         rows = benchmark.dataset(t)
         out[t] = [{"plan": r["plan"], "item_id": r["item"].id, "question": r["item"].question, "truth": r["truth"],
-                   "tricky": r["tricky"], "why_tricky": r["why_tricky"], "paragraph_ids": r["paragraph_ids"]}
+                   "tricky": r["tricky"], "why_tricky": r["why_tricky"], "paragraph_ids": r["paragraph_ids"],
+                   "planted": r.get("planted", ""), "severity": r.get("severity")}
                   for r in rows]
     out["review_labels"] = _jsonable(db.q("select * from review_labels order by created_at desc limit 200"))
     return out
+
+
+# ─── platform overview (what was built) ───────────────────────────────────────
+REPO = "https://github.com/sudhersankv/plumbline/blob/main"
+PIECES = [
+    {"id": "documents", "layer": "pieces", "file": "plumbline/documents.py", "kind": "Code",
+     "does": "Splits regulations, policies and evidence into paragraphs with stable IDs like SUNVALE-POL-02:P12.",
+     "why": "A reviewer must find cited text in seconds, and code can only verify a citation if paragraphs have fixed IDs."},
+    {"id": "requirements", "layer": "pieces", "file": "plumbline/requirements.py", "kind": "LLM, once",
+     "does": "Turns a regulation into atomic obligations, each with an exact quote. Run once with Opus, checked, reviewed by a person, saved, shared by every plan.",
+     "why": "One state letter reaches every health plan. Doing the regulation side once cuts cost, and every plan cites the same requirement IDs."},
+    {"id": "retrieve", "layer": "pieces", "file": "plumbline/retrieve.py", "kind": "Embeddings + pgvector",
+     "does": "Embeds every paragraph (qwen3-embedding-0-6b via Neon AI Gateway) and finds the closest ones for a question. Also assembles a whole document set for long-context models.",
+     "why": "Per-item retrieval is the usual RAG baseline; whole-corpus assembly makes long-context routes possible with the same data."},
+    {"id": "cite", "layer": "pieces", "file": "plumbline/cite.py", "kind": "Code",
+     "does": "Checks every citation: the paragraph exists, belongs to this plan, was actually shown to the model, and the quote appears in it word for word. Failures become needs_review.",
+     "why": "A person signs every output, so a citation must be guaranteed, not likely. Unverified findings are flagged, never dropped."},
+    {"id": "judge", "layer": "pieces", "file": "plumbline/judge.py", "kind": "Calls the gateway",
+     "does": "Runs a labelling task over many items in whatever shape the route asks for: per item with retrieval, batched typed questions (Snap), whole corpus in one call (long context), or a cascade. Every shape returns the same verdict records.",
+     "why": "This is the seam that makes routing a config change: workflows and the benchmark call the same function; only the route differs."},
+    {"id": "runs", "layer": "pieces", "file": "plumbline/runs.py", "kind": "Code",
+     "does": "Records every workflow run: inputs, verdicts, review decisions, and every model call it made.",
+     "why": "Audits need a trail: which model said what, from which text, at what cost."},
+    {"id": "gateway", "layer": "gateway", "file": "plumbline/gateway.py", "kind": "The only door to models",
+     "does": "complete() for LLMs, decide() for the decision model, embed() for vectors. Routes each task from the routing table, retries, falls back to a backup model, caches, and logs tokens, cost and latency per call.",
+     "why": "Logging, cost, caching, fallback and future data controls (PHI scrubbing, BAA-covered providers) apply everywhere at once."},
+    {"id": "benchmark", "layer": "workflows", "file": "plumbline/benchmark.py", "kind": "Eval harness",
+     "does": "Runs each task's labelled dataset through several model setups via the same judge piece, scores them, replays a cascade, and stress-tests the decision model.",
+     "why": "Routing decisions come from metrics, not demos."},
+]
+
+
+def _source(fn) -> str:
+    import inspect
+    return inspect.getsource(fn)
+
+
+def _tests() -> list[dict]:
+    import ast
+    p = Path(__file__).resolve().parents[1] / "tests" / "test_platform.py"
+    if not p.exists():
+        return []
+    tree = ast.parse(p.read_text(encoding="utf-8"))
+    out = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+            out.append({"name": node.name, "doc": ast.get_docstring(node) or "",
+                        "readable": node.name[5:].replace("_", " ").capitalize()})
+    return out
+
+
+@app.get("/api/source")
+def source(file: str):
+    root = Path(__file__).resolve().parents[1]
+    p = (root / file).resolve()
+    allowed = [root / "plumbline", root / "tests", root / "scripts"]
+    if p.suffix != ".py" or not any(str(p).startswith(str(a)) for a in allowed) or not p.is_file():
+        raise HTTPException(404)
+    return {"file": file, "url": f"{REPO}/{file}", "code": p.read_text(encoding="utf-8")}
+
+
+@app.get("/api/platform")
+def platform():
+    stats = db.one("""select count(*) calls, count(*) filter (where cached) cached,
+                      count(*) filter (where fallback_from is not null) fallbacks,
+                      coalesce(sum(cost_usd) filter (where not cached),0) spend,
+                      count(*) filter (where error is not null) errors from model_calls""")
+    by_model = db.q("""select provider, model, kind, count(*) calls, count(*) filter (where cached) cached,
+                       coalesce(sum(cost_usd) filter (where not cached),0) spend, coalesce(sum(input_tokens),0) tin,
+                       coalesce(sum(output_tokens),0) tout,
+                       percentile_cont(0.5) within group (order by latency_ms) filter (where not cached) p50
+                       from model_calls group by 1,2,3 order by spend desc""")
+    corpus = db.q("select coalesce(plan,'shared') plan, kind, count(distinct doc_id) docs, count(*) paragraphs from paragraphs group by 1,2 order by 1,2")
+    latest = {}
+    for wf in workflows.WORKFLOWS:
+        r = db.one("select id, plan, summary, started_at, finished_at from runs where workflow=%s and status='done' order by started_at desc limit 1", wf)
+        if r:
+            calls = db.q("""select task, kind, model, count(*) n, count(*) filter (where cached) cached,
+                            coalesce(sum(cost_usd) filter (where not cached),0) cost, max(latency_ms) latency
+                            from model_calls where run_id=%s group by 1,2,3 order by min(id)""", r["id"])
+            latest[wf] = {**r, "calls": calls}
+    return _jsonable({
+        "repo": REPO.replace("/blob/main", ""), "repo_blob": REPO, "pieces": PIECES,
+        "sources": {"regulatory_change": _source(workflows.regulatory_change), "audit_review": _source(workflows.audit_review)},
+        "tests": _tests(), "stats": stats, "by_model": by_model, "corpus": corpus, "latest": latest,
+        "routes": db.q("select task, route from routes order by task"),
+        "prices": {m: {"input": p[0], "output": p[1]} for m, p in config.PRICES.items()},
+        "models": {"strong": config.STRONG_MODEL, "cheap": config.CHEAP_MODEL, "fallback": config.FALLBACK_MODEL,
+                   "embedding": config.EMBEDDING_MODEL, "snap": config.SNAP_MODEL, "savant": config.SAVANT_MODEL},
+        "counts": {"requirements": len(tasks.load_requirements()), "audit_items": len(tasks.load_audit_items("sunvale")),
+                   "gap_labels": len(benchmark.dataset("judge_gap")), "evidence_labels": len(benchmark.dataset("judge_evidence")),
+                   "runs": db.one("select count(*) n from runs")["n"], "benchmarks": db.one("select count(*) n from benchmarks where status='done'")["n"]},
+    })
 
 
 # ─── static console ───────────────────────────────────────────────────────────

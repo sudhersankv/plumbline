@@ -7,7 +7,7 @@ export default function Overview() {
   const { data, reload } = usePoll<any>("/api/overview", 4000);
   const nav = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
-  if (!data) return <div className="page"><PageHead eyebrow="Compliance workspace" title="Regulatory changes" /></div>;
+  if (!data) return <div className="page"><PageHead eyebrow="Apps · Compliance workspace" title="Regulatory changes" /></div>;
   const reg = data.regulations[0];
   const latest = (wf: string, plan: string) => data.latest_runs.find((r: any) => r.workflow === wf && r.plan === plan);
   const daysLeft = Math.ceil((+new Date(reg.due) - +new Date("2026-11-14")) / 86400000);
@@ -19,7 +19,7 @@ export default function Overview() {
 
   return (
     <div className="page">
-      <PageHead eyebrow="Compliance workspace" title="Regulatory changes"
+      <PageHead eyebrow="Apps · Compliance workspace" title="Regulatory changes"
         lede="New state letters, the plans they reach, and where each plan's review stands. Every finding links back to the exact regulation and policy text." />
 
       <article className="letter">
@@ -80,8 +80,8 @@ export default function Overview() {
         <div className="rule-box"><div className="stat-label">Model calls</div>
           <div className="stat">{data.spend.calls}<small>{data.spend.cached} from cache</small></div></div>
         <div className="rule-box"><div className="stat-label">How findings are made</div>
-          <p className="muted" style={{ marginTop: 8 }}>Workflows call the platform gateway; the <Link to="/routing">routing table</Link> picks
-            the model per task, and the <Link to="/benchmarks">benchmark</Link> decides the route.</p></div>
+          <p className="muted" style={{ marginTop: 8 }}>Workflows call the platform gateway; the <Link to="/gateway">routing table</Link> picks
+            the model per task, and the <Link to="/evals">evals</Link> decides the route.</p></div>
       </section>
     </div>
   );

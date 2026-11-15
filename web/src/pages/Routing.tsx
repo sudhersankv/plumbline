@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { put, when } from "../api";
 import { PageHead, usePoll } from "../ui";
+import { GatewayLive } from "./Platform";
 
 const TASK_NOTES: Record<string, string> = {
   extract_requirements: "Regulation → atomic obligations. Run once, reviewed by a person.",
@@ -19,6 +20,7 @@ function describe(r: any): string {
 
 export default function Routing() {
   const { data, reload } = usePoll<any>("/api/routes");
+  const { data: gw } = usePoll<any>("/api/platform");
   const [edit, setEdit] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -40,8 +42,10 @@ export default function Routing() {
 
   return (
     <div className="page">
-      <PageHead eyebrow="Platform" title="Routing"
-        lede="One row per task. Workflows never name a model; the gateway reads this table on every call. Changing a model is a config change, not a code change, and the next run picks it up." />
+      <PageHead eyebrow="AI platform" title="Gateway & routing"
+        lede="Every model call in the platform goes through one gateway. It reads the routing table below on every call, retries, falls back to a backup model, caches, and logs cost and latency. Workflows never name a model, so changing one is a row here, not a code change." />
+      {gw && <div style={{ marginTop: -24, marginBottom: 40 }}><GatewayLive p={gw} /></div>}
+      <h2 className="section-title">Routing table</h2>
       {data && <table>
         <thead><tr><th style={{ width: 190 }}>Task</th><th>Route</th><th>Provider</th><th>Updated</th><th /></tr></thead>
         <tbody>{data.routes.map((r: any) => (
